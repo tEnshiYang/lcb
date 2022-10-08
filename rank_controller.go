@@ -14,13 +14,8 @@ type RankInfo struct {
 	rank  int
 }
 
-func QueryTopThree(client redis.Conn) []string {
-	res, err := redis.Strings(client.Do("zrevrange", RANK_KEY, 0, 3))
-	if err != nil {
-		fmt.Println("zincrby failed, err:", err)
-		return nil
-	}
-	return res
+func QueryTopThree(client redis.Conn) []RankInfo {
+	return QueryRankInfo(client, 0, 3)
 }
 
 func QueryAroundTenRank(client redis.Conn, id int) []RankInfo {
@@ -29,7 +24,6 @@ func QueryAroundTenRank(client redis.Conn, id int) []RankInfo {
 		fmt.Println("zincrby failed, err:", err)
 		return nil
 	}
-	var rankInfos []RankInfo
 	var beginRank, endRank int
 	//排名在前5，取前11个，否则取前后各5个
 	if myrank < 5 {
@@ -39,7 +33,19 @@ func QueryAroundTenRank(client redis.Conn, id int) []RankInfo {
 		beginRank = myrank - 5
 		endRank = myrank + 6
 	}
+	rankInfos := QueryRankInfo(client, beginRank, endRank)
+	for i := 0; i < len(rankInfos); i++ {
+		if rankInfos[i].rank == myrank {
+			rankInfos = append(rankInfos[:i], rankInfos[i+1:]...)
+			continue
+		}
+	}
+	return rankInfos
+}
 
+//查询排名信息，相同分数合成一位
+func QueryRankInfo(client redis.Conn, beginRank, endRank int) []RankInfo {
+	var rankInfos []RankInfo
 	res, err := redis.Ints(client.Do("zrevrange", RANK_KEY, beginRank, endRank))
 	if err != nil {
 		fmt.Println("zincrby failed, err:", err)
@@ -47,10 +53,6 @@ func QueryAroundTenRank(client redis.Conn, id int) []RankInfo {
 	}
 	rank := beginRank
 	for i := 0; i < len(res); i++ {
-		if rank == myrank {
-			rank++
-			continue
-		}
 		rank++
 		rankInfo := RankInfo{
 			rank: rank,
@@ -65,6 +67,13 @@ func QueryAroundTenRank(client redis.Conn, id int) []RankInfo {
 			return nil
 		}
 		rankInfos[i].score = getPoint(int64(score))
+	}
+	nowRank := rankInfos[0].rank
+	for i := 1; i < len(rankInfos); i++ {
+		if rankInfos[i].score != rankInfos[i-1].score {
+			nowRank++
+		}
+		rankInfos[i].rank = nowRank
 	}
 	return rankInfos
 }
@@ -119,7 +128,7 @@ func main() {
 	time.Sleep(1e9)
 	updateRank(client, 4, 999)
 	res := QueryTopThree(client)
-	fmt.Printf("res is %v\n", res)
+	fmt.Printf("top 3 is %v\n", res)
 	ranks := QueryAroundTenRank(client, queryMyRank(client, 2))
 	for i := 0; i < len(ranks); i++ {
 		fmt.Printf("rankinfos %v\n", ranks[i])
