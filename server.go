@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"net"
 	"strconv"
@@ -20,6 +18,11 @@ func main() {
 		if err != nil {
 			fmt.Println("accept failed,err:%v\n", err)
 			continue
+		}
+		//开启nagle
+		err = setNoDelay(conn)
+		if err != nil {
+			fmt.Println("open nagle failed,err:%v\n", err)
 		}
 		go process(conn)
 	}
@@ -58,9 +61,16 @@ func add(str string) string {
 	return strconv.Itoa(a + b)
 }
 
-func IntToBytes(n int) []byte {
-	x := int32(n)
-	bytesBuffer := bytes.NewBuffer([]byte{})
-	binary.Write(bytesBuffer, binary.BigEndian, &x)
-	return bytesBuffer.Bytes()
+func setNoDelay(conn net.Conn) error {
+	switch conn := conn.(type) {
+	case *net.TCPConn:
+		var err error
+		if err = conn.SetNoDelay(false); err != nil {
+			return err
+		}
+		return err
+
+	default:
+		return fmt.Errorf("unknown connection type %T", conn)
+	}
 }
